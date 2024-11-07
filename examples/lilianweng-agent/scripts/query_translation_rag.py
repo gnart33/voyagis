@@ -1,8 +1,12 @@
 from pathlib import Path
 from typing import Optional
 
-from voyagis.core.query_translation import MultiQueryRAG, RAGFusion, DecompositionRAG
-from voyagis.core.logging import setup_logging
+from voyagis.core.rag.query_translation import (
+    MultiQueryRAG,
+    RAGFusion,
+    DecompositionRAG,
+)
+from voyagis.core.rag.logging import setup_logging
 
 working_dir_path = Path(__file__).parent.parent
 
