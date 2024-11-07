@@ -20,4 +20,4 @@ class RAGConfig:
 
     chunk_size: int = 1000
     chunk_overlap: int = 200
-    retriever_k: int = 1
+    retriever_k: int = 2
