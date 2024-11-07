@@ -2,8 +2,8 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from rags.core.base import BaseRAG
-from rags.core.logging import setup_logging
+from voyagis.core.rag.base import BaseRAG
+from voyagis.core.rag.logging import setup_logging
 
 
 def main():

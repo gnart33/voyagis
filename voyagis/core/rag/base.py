@@ -15,8 +15,8 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
 
-from rags.core.config import LLMConfig, RAGConfig
-from rags.core.prompts import base_rag_prompt
+from voyagis.core.rag.config import LLMConfig, RAGConfig
+from voyagis.core.rag.prompts import base_rag_prompt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
