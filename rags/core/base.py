@@ -141,7 +141,7 @@ class BaseRAG:
             logger.error(f"Error initializing retrieval system: {str(e)}")
             raise e
 
-    def _setup_chain(self) -> None:
+    def _setup_chain(self, **kwargs) -> None:
         """Initialize the RAG chain with a prompt template and LLM.
 
         The chain combines context retrieval, prompt formatting, and LLM generation.

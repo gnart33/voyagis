@@ -13,7 +13,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
-from langchain.schema.runnable import RunnablePassthrough
+from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain.schema.output_parser import StrOutputParser
 
 from rags.core.config import LLMConfig, RAGConfig
@@ -36,7 +36,6 @@ class MultiQueryRAG(BaseRAG):
     ):
         super().__init__(rag_config=rag_config, llm_config=llm_config)
         self.num_perspectives = num_perspectives
-        # self._query_generator = None
 
     def _get_unique_union(self, documents: List[List[Document]]) -> List[Document]:
         """Get unique union of retrieved documents"""
@@ -188,3 +187,82 @@ class RAGFusion(BaseRAG):
         except Exception as e:
             logger.error(f"Error initializing chain: {str(e)}")
             raise
+
+
+class DecompositionRAG(BaseRAG):
+    """Advanced RAG implementation with question decomposition."""
+
+    def __init__(
+        self,
+        rag_config: Optional[RAGConfig] = None,
+        llm_config: Optional[LLMConfig] = None,
+        num_subquestions: int = 3,
+    ):
+        super().__init__(rag_config=rag_config, llm_config=llm_config)
+        self.num_subquestions = num_subquestions
+        self._decomposition_chain = None  # Add this to store the chain components
+
+    def _setup_chain(self, **kwargs) -> None:
+        """Initialize the components needed for decomposition RAG"""
+        # Initialize the template and other reusable components
+        self._decomposition_template = """Here is the question you need to answer:
+
+        \n --- \n {question} \n --- \n
+
+        Here is any available background question + answer pairs:
+
+        \n --- \n {q_a_pairs} \n --- \n
+
+        Here is additional context relevant to the question: 
+
+        \n --- \n {context} \n --- \n
+
+        Use the above context and any background question + answer pairs to answer the question: \n {question}
+        """
+        self._decomposition_prompt = ChatPromptTemplate.from_template(
+            self._decomposition_template
+        )
+        logger.info("Decomposition RAG chain components initialized")
+
+    def invoke(self, question: str) -> str:
+        """Process the question using decomposition approach"""
+        # Generate sub-questions
+        template = f"""You are a helpful assistant that generates multiple sub-questions related to an input question.
+        
+        The goal is to break down the input into a set of sub-problems / sub-questions that can be answered in isolation.
+        
+        Generate multiple search queries related to: {{question}}
+        
+        Output ({self.num_subquestions} queries):"""
+
+        prompt_decomposition = ChatPromptTemplate.from_template(template)
+
+        query_generator = (
+            prompt_decomposition
+            | self._llm
+            | StrOutputParser()
+            | (lambda x: x.split("\n"))
+        )
+
+        questions = query_generator.invoke({"question": question})
+
+        # Process each sub-question
+        q_a_pairs = ""
+        final_answer = None
+
+        for q in questions:
+            rag_chain = (
+                {
+                    "context": itemgetter("question") | self._retriever,
+                    "question": itemgetter("question"),
+                    "q_a_pairs": itemgetter("q_a_pairs"),
+                }
+                | self._decomposition_prompt
+                | self._llm
+                | StrOutputParser()
+            )
+            answer = rag_chain.invoke({"question": q, "q_a_pairs": q_a_pairs})
+            q_a_pairs += f"\n---\nQuestion: {q}\nAnswer: {answer}\n\n"
+            final_answer = answer  # Keep the last answer as final
+
+        return final_answer

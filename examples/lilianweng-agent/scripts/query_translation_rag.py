@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-from rags.core.query_translation import MultiQueryRAG, RAGFusion
+from rags.core.query_translation import MultiQueryRAG, RAGFusion, DecompositionRAG
 from rags.core.logging import setup_logging
 
 working_dir_path = Path(__file__).parent.parent
@@ -28,10 +28,22 @@ def rag_fusion():
     rag.invoke("What is Task Decomposition?")
 
 
+def decomposition_rag():
+    log_file_path = working_dir_path / "scripts/logs/decomposition_rag.log"
+    setup_logging(log_file_path)
+    resource_path = Path("examples/lilianweng-agent")
+
+    rag = DecompositionRAG()
+    rag.setup(resource_path)
+
+    rag.invoke("What is Task Decomposition?")
+
+
 def main():
 
     # multi_query_rag()
-    rag_fusion()
+    # rag_fusion()
+    decomposition_rag()
 
 
 if __name__ == "__main__":
