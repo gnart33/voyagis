@@ -4,8 +4,9 @@ This module implements a basic RAG system.
 """
 
 import logging
-from typing import List, Optional, Tuple, Any
-from pathlib import Path
+from typing import List, Optional, Tuple
+from operator import itemgetter
+
 
 from langchain.load import dumps, loads
 from langchain_community.vectorstores import Chroma
@@ -35,7 +36,7 @@ class MultiQueryRAG(BaseRAG):
     ):
         super().__init__(rag_config=rag_config, llm_config=llm_config)
         self.num_perspectives = num_perspectives
-        self._query_generator = None
+        # self._query_generator = None
 
     def _get_unique_union(self, documents: List[List[Document]]) -> List[Document]:
         """Get unique union of retrieved documents"""
@@ -74,7 +75,10 @@ class MultiQueryRAG(BaseRAG):
 
             # Initialize the chain components
             self._chain = (
-                {"context": retrieval_chain, "question": RunnablePassthrough()}
+                {
+                    "context": retrieval_chain,
+                    "question": RunnablePassthrough(),  # Changed from itemgetter
+                }
                 | prompt
                 | self._llm
                 | StrOutputParser()
@@ -84,3 +88,103 @@ class MultiQueryRAG(BaseRAG):
         except Exception as e:
             logger.error(f"Error initializing chain: {str(e)}")
             raise e
+
+
+class RAGFusion(BaseRAG):
+    """Advanced RAG processor with RAG-Fusion implementation."""
+
+    def __init__(
+        self,
+        rag_config: Optional[RAGConfig] = None,
+        llm_config: Optional[LLMConfig] = None,
+        num_queries: int = 4,
+        rrf_k: int = 60,
+        **kwargs,
+    ):
+        super().__init__(rag_config=rag_config, llm_config=llm_config, **kwargs)
+
+        self.num_queries = num_queries
+        self.rrf_k = rrf_k  # Parameter for reciprocal rank fusion
+
+        # self._query_generator = None
+
+    def _reciprocal_rank_fusion(self, results: List[List[Document]]) -> List[Document]:
+        """Implement reciprocal rank fusion scoring"""
+        try:
+            fused_scores = {}
+
+            for docs in results:
+                for rank, doc in enumerate(docs):
+                    doc_str = dumps(doc)
+                    if doc_str not in fused_scores:
+                        fused_scores[doc_str] = 0
+                    fused_scores[doc_str] += 1 / (rank + self.rrf_k)
+
+            # Return just the documents in order of their scores
+            reranked_results = [
+                loads(doc)
+                for doc, _ in sorted(
+                    fused_scores.items(), key=lambda x: x[1], reverse=True
+                )
+            ]
+
+            return reranked_results
+        except Exception as e:
+            logger.error(f"Error in reciprocal rank fusion: {str(e)}")
+            raise
+
+    def initialize_retrieval_system(self, documents: List[Document]) -> None:
+        """Initialize retrieval system with RAG-Fusion capability"""
+        try:
+            self.vectorstore = Chroma.from_documents(
+                documents=documents, embedding=OpenAIEmbeddings()
+            )
+            self.retriever = self.vectorstore.as_retriever(
+                search_kwargs={"k": self.retriever_k}
+            )
+
+            logger.info("RAG-Fusion retrieval system initialized")
+        except Exception as e:
+            logger.error(f"Error initializing retrieval system: {str(e)}")
+            raise
+
+    def _setup_chain(self) -> None:
+        """Initialize RAG chain with RAG-Fusion retrieval"""
+        # Initialize query generator for RAG-Fusion
+        template = f"""You are a helpful assistant that generates multiple search queries based on a single input query.
+
+        Generate multiple search queries related to: {{question}}
+
+        Output ({self.num_queries} queries):"""
+
+        prompt_rag_fusion = ChatPromptTemplate.from_template(template)
+
+        self._query_generator = (
+            prompt_rag_fusion
+            | ChatOpenAI(temperature=0)
+            | StrOutputParser()
+            | (lambda x: x.split("\n"))
+        )
+        try:
+
+            # Create RAG-Fusion retrieval chain
+            retrieval_chain = (
+                self._query_generator
+                | self._retriever.map()
+                | self._reciprocal_rank_fusion
+            )
+
+            # Create final RAG chain
+            prompt = ChatPromptTemplate.from_template(base_rag_prompt)
+
+            self._chain = (
+                {"context": retrieval_chain, "question": RunnablePassthrough()}
+                | prompt
+                | self._llm
+                | StrOutputParser()
+            )
+
+            logger.info("RAG-Fusion chain initialized")
+        except Exception as e:
+            logger.error(f"Error initializing chain: {str(e)}")
+            raise
