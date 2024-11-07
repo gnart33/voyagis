@@ -54,4 +54,4 @@ local_settings.py
 ehthumbs.db
 Thumbs.db
 
-nbs/
+temp/

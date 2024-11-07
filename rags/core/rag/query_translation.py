@@ -132,21 +132,6 @@ class RAGFusion(BaseRAG):
             logger.error(f"Error in reciprocal rank fusion: {str(e)}")
             raise
 
-    def initialize_retrieval_system(self, documents: List[Document]) -> None:
-        """Initialize retrieval system with RAG-Fusion capability"""
-        try:
-            self.vectorstore = Chroma.from_documents(
-                documents=documents, embedding=OpenAIEmbeddings()
-            )
-            self.retriever = self.vectorstore.as_retriever(
-                search_kwargs={"k": self.retriever_k}
-            )
-
-            logger.info("RAG-Fusion retrieval system initialized")
-        except Exception as e:
-            logger.error(f"Error initializing retrieval system: {str(e)}")
-            raise
-
     def _setup_chain(self) -> None:
         """Initialize RAG chain with RAG-Fusion retrieval"""
         # Initialize query generator for RAG-Fusion
@@ -224,7 +209,7 @@ class DecompositionRAG(BaseRAG):
         )
         logger.info("Decomposition RAG chain components initialized")
 
-    def invoke(self, question: str) -> str:
+    def invoke_recursively(self, question: str) -> str:
         """Process the question using decomposition approach"""
         # Generate sub-questions
         template = f"""You are a helpful assistant that generates multiple sub-questions related to an input question.
@@ -266,3 +251,106 @@ class DecompositionRAG(BaseRAG):
             final_answer = answer  # Keep the last answer as final
 
         return final_answer
+
+    def invoke_individual(self, question: str) -> str:
+        """Process the question using decomposition approach with individual answers"""
+        # Generate sub-questions
+        template = f"""You are a helpful assistant that generates multiple sub-questions related to an input question.
+        
+        The goal is to break down the input into a set of sub-problems / sub-questions that can be answered in isolation.
+        
+        Generate multiple search queries related to: {{question}}
+        
+        Output ({self.num_subquestions} queries):"""
+
+        prompt_decomposition = ChatPromptTemplate.from_template(template)
+
+        query_generator = (
+            prompt_decomposition
+            | self._llm
+            | StrOutputParser()
+            | (lambda x: x.split("\n"))
+        )
+
+        sub_questions = query_generator.invoke({"question": question})
+
+        # Process each sub-question individually
+        answers = []
+        for sub_q in sub_questions:
+            # Retrieve documents for each sub-question
+            retrieved_docs = self._retriever.invoke(sub_q)
+
+            # Create RAG chain for individual sub-question
+            rag_chain = (
+                {
+                    "context": RunnableLambda(lambda x: retrieved_docs),
+                    "question": RunnableLambda(lambda x: sub_q),
+                }
+                | ChatPromptTemplate.from_template(base_rag_prompt)
+                | self._llm
+                | StrOutputParser()
+            )
+
+            answer = rag_chain.invoke({})
+            answers.append(answer)
+
+        # Format Q&A pairs
+        def format_qa_pairs(questions: List[str], answers: List[str]) -> str:
+            """Format questions and answers into a readable string"""
+            formatted_string = ""
+            for i, (question, answer) in enumerate(zip(questions, answers), start=1):
+                formatted_string += (
+                    f"Question {i}: {question}\nAnswer {i}: {answer}\n\n"
+                )
+            return formatted_string.strip()
+
+        qa_context = format_qa_pairs(sub_questions, answers)
+
+        # Final synthesis prompt
+        synthesis_template = """Here is a set of Q+A pairs that break down the original question:
+
+        {context}
+
+        Using these sub-answers, synthesize a complete response to the original question: {question}
+        """
+
+        synthesis_chain = (
+            ChatPromptTemplate.from_template(synthesis_template)
+            | self._llm
+            | StrOutputParser()
+        )
+
+        return synthesis_chain.invoke({"context": qa_context, "question": question})
+
+    def invoke(self, question: str, method: str = "recursively") -> str:
+        """Invoke the RAG chain with decomposition"""
+        if method == "recursively":
+            return self.invoke_recursively(question)
+        elif method == "individual":
+            return self.invoke_individual(question)
+        else:
+            raise ValueError(
+                f"Invalid method: {method}, must be 'recursively' or 'individual'"
+            )
+
+
+class StepBackRAG(BaseRAG):
+    """Advanced RAG implementation with step-back"""
+
+    def __init__(
+        self,
+        rag_config: Optional[RAGConfig] = None,
+        llm_config: Optional[LLMConfig] = None,
+    ):
+        super().__init__(rag_config=rag_config, llm_config=llm_config)
+
+
+class HyDERAG(BaseRAG):
+    """Advanced RAG implementation with HyDE"""
+
+    def __init__(
+        self,
+        rag_config: Optional[RAGConfig] = None,
+        llm_config: Optional[LLMConfig] = None,
+    ):
+        super().__init__(rag_config=rag_config, llm_config=llm_config)

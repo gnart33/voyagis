@@ -29,14 +29,15 @@ def rag_fusion():
 
 
 def decomposition_rag():
-    log_file_path = working_dir_path / "scripts/logs/decomposition_rag.log"
-    setup_logging(log_file_path)
+    # log_file_path = working_dir_path / "scripts/logs/decomposition_rag.log"
+    # setup_logging(log_file_path)
     resource_path = Path("examples/lilianweng-agent")
 
     rag = DecompositionRAG()
     rag.setup(resource_path)
 
-    rag.invoke("What is Task Decomposition?")
+    answer = rag.invoke("What is Task Decomposition?", method="recursively")
+    print(answer)
 
 
 def main():
