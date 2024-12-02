@@ -1,13 +1,17 @@
 [tool.poetry]
 name = "voyagis"
 version = "0.1.0"
-description = "Voyagis"
-authors = ["gnart"]
+description = ""
+authors = ["trangnv <nvtrang91@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.11,<3.13"
 
+# Add dev dependencies section if needed
+quivr-core = "^0.0.24"
+[tool.poetry.group.dev.dependencies]
+# Add your development dependencies here
 
 [build-system]
 requires = ["poetry-core"]
